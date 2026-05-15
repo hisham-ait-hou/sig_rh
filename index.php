@@ -1,78 +1,65 @@
 <?php
-session_start();
-require_once 'includes/db.php';
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/includes/bootstrap.php';
 
 $error = '';
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
-  $email = trim($_POST['email']);
-  $mot_de_passe = $_POST['mot_de_passe'];
+if (is_post_request() && isset($_POST['login_submit'])) {
+    $email = trim((string) ($_POST['email'] ?? ''));
+    $motDePasse = (string) ($_POST['mot_de_passe'] ?? '');
 
-  $stmt = $pdo->prepare("SELECT * FROM utilisateurs WHERE email = ?");
-  $stmt->execute([$email]);
-  $user = $stmt->fetch();
+    $stmt = $pdo->prepare('SELECT * FROM utilisateurs WHERE email = ? LIMIT 1');
+    $stmt->execute([$email]);
+    $user = $stmt->fetch();
 
-  if ($user) {
-    // Vérification du mot de passe hashé ou en clair (pour compatibilité)
-    $mot_de_passe_valide = false;
-    if (!empty($user['mot_de_passe'])) {
-      if (password_verify($mot_de_passe, $user['mot_de_passe'])) {
-        $mot_de_passe_valide = true;
-      } elseif ($mot_de_passe === $user['mot_de_passe']) {
-        $mot_de_passe_valide = true;
-      }
-    }
-    if ($mot_de_passe_valide) {
-      $_SESSION['utilisateur'] = $user;
-      if ($user['role'] === 'rh') {
-        header('Location: back-office/dashboard.php');
-        exit;
-      } elseif ($user['role'] === 'responsable') {
-        header('Location: responsable/dashboard.php');
-        exit;
-      } elseif ($user['role'] === 'employe') {
-        header('Location: front-office/dashboard.php');
-        exit;
-      } else {
-        $error = "Rôle inconnu, accès refusé.";
-      }
+    if ($user && verify_user_password($user, $motDePasse, $pdo)) {
+        login_user($user);
+        refresh_current_user($pdo);
+
+        $role = current_user()['role'] ?? null;
+        if ($role === 'rh') {
+            redirect('back-office/dashboard.php');
+        }
+        if ($role === 'responsable') {
+            redirect('responsable/dashboard.php');
+        }
+        if ($role === 'employe') {
+            redirect('front-office/dashboard.php');
+        }
+
+        logout_user();
+        $error = "Role inconnu, acces refuse.";
     } else {
-      $error = "Mot de passe incorrect.";
+        $error = "Identifiants incorrects.";
     }
-  } else {
-    $error = "Identifiants incorrects.";
-  }
 }
 ?>
 <!DOCTYPE html>
 <html lang="fr">
-
 <head>
   <meta charset="UTF-8">
   <title>SIGRH - Accueil</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="assets/plugins/fontawesome-free/css/all.min.css">
-  <link rel="stylesheet" href="assets/plugins/bootstrap/css/bootstrap.min.css">
-  <link rel="stylesheet" href="assets/dist/css/adminlte.min.css">
+  <link rel="stylesheet" href="<?= h(base_url('assets/plugins/fontawesome-free/css/all.min.css')) ?>">
+  <link rel="stylesheet" href="<?= h(base_url('assets/plugins/bootstrap/css/bootstrap.min.css')) ?>">
+  <link rel="stylesheet" href="<?= h(base_url('assets/dist/css/adminlte.min.css')) ?>">
   <style>
-    body,
-    html {
+    body, html {
       height: 100%;
       margin: 0;
       padding: 0;
     }
 
     .bg-hero {
-      background: url('assets/dist/img/pigier1.jpg') center center/cover no-repeat;
+      background: url('<?= h(base_url('assets/dist/img/pigier1.jpg')) ?>') center center/cover no-repeat;
       min-height: 100vh;
       position: relative;
     }
 
     .bg-overlay {
       position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
+      inset: 0;
       background: rgba(30, 40, 44, 0.65);
       z-index: 1;
     }
@@ -122,15 +109,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
       max-width: 350px;
     }
 
-    .login-card h4 {
-      font-weight: 700;
-      margin-bottom: 1.5rem;
-      color: #222;
-      text-align: center;
-    }
-
     .main-footer {
-      background:rgba(19, 16, 16, 0.25);
+      background: rgba(19, 16, 16, 0.25);
       color: #fff;
       padding: 18px 0 10px 0;
       font-size: 1em;
@@ -156,22 +136,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
     }
   </style>
 </head>
-
 <body>
   <div class="bg-hero">
-   
     <div class="bg-overlay"></div>
     <div class="container hero-content">
       <div class="welcome-block">
-      
-        <h1>Bienvenue sur SIGRH </h1>
-        <p>La plateforme RH moderne pour gérer vos demandes, bulletins de paie, candidatures et plus encore.<br>Accédez à tous vos services RH en un seul endroit.</p>
-        <a href="candidature.php" class="btn btn-info btn-action"><i class="fas fa-file-alt"></i> Déposer une candidature</a>
-        <a href="contact.php" class="btn btn-outline-light btn-action"><i class="fas fa-envelope"></i> Contact RH</a>
+        <h1>Bienvenue sur SIGRH</h1>
+        <p>La plateforme RH pour gerer vos demandes, bulletins de paie, candidatures et contacts en un seul endroit.</p>
+        <a href="<?= h(base_url('candidature.php')) ?>" class="btn btn-info btn-action"><i class="fas fa-file-alt"></i> Deposer une candidature</a>
+        <a href="<?= h(base_url('contact.php')) ?>" class="btn btn-outline-light btn-action"><i class="fas fa-envelope"></i> Contact RH</a>
       </div>
       <div class="login-card ml-auto">
-        <?php if ($error): ?>
-          <div class="alert alert-danger"><?= $error ?></div>
+        <?php if ($error !== ''): ?>
+          <div class="alert alert-danger"><?= h($error) ?></div>
         <?php endif; ?>
         <form method="post">
           <div class="form-group mb-3">
@@ -181,21 +158,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login_submit'])) {
             <input type="password" name="mot_de_passe" class="form-control" placeholder="Mot de passe" required>
           </div>
           <button type="submit" name="login_submit" class="btn btn-primary btn-block">Connexion</button>
-          <div class="mt-2 text-center">
-            <a href="#" style="font-size:0.95em;">Mot de passe oublié ?</a>
-          </div>
         </form>
       </div>
     </div>
     <footer class="main-footer text-center">
-      <strong>SIGRH</strong> – Projet GESTION RH Réaliser par AIT HOU HISHAM &copy; <?= date('Y') ?>
+      <strong>SIGRH</strong> - Projet GESTION RH &copy; <?= date('Y') ?>
     </footer>
   </div>
 
-  <!-- JS -->
-  <script src="assets/plugins/jquery/jquery.min.js"></script>
-  <script src="assets/plugins/bootstrap/js/bootstrap.bundle.min.js"></script>
-  <script src="assets/dist/js/adminlte.min.js"></script>
+  <script src="<?= h(base_url('assets/plugins/jquery/jquery.min.js')) ?>"></script>
+  <script src="<?= h(base_url('assets/plugins/bootstrap/js/bootstrap.bundle.min.js')) ?>"></script>
+  <script src="<?= h(base_url('assets/dist/js/adminlte.min.js')) ?>"></script>
 </body>
-
 </html>
